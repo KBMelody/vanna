@@ -166,7 +166,7 @@ class ServiceConfig:
         ]
         return cls(
             qwen_api_key=qwen_api_key,
-            qwen_model=os.getenv("QWEN_MODEL", "qwen-plus"),
+            qwen_model=os.getenv("QWEN_MODEL", "qwen3.6-plus"),
             qwen_base_url=os.getenv(
                 "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
             ),
@@ -196,48 +196,64 @@ class ChatBINL2SQLService:
     def __init__(self, config: ServiceConfig):
         self.config = config
         self.metadata = MetaData()
+        # Store manually maintained business documentation used for NL2SQL context.
         self.documentation_table = Table(
             "chatbi_vanna_documentation",
             self.metadata,
-            Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("content", Text, nullable=False),
-            Column("content_hash", String(64), nullable=False),
-            Column("trained_content_hash", String(64)),
-            Column("vanna_training_id", String(128)),
-            Column("created_at", DateTime, nullable=False),
-            Column("updated_at", DateTime, nullable=False),
-            Column("last_trained_at", DateTime),
+            Column("id", Integer, primary_key=True, autoincrement=True, comment="主键ID"),
+            Column("content", Text, nullable=False, comment="业务文档内容"),
+            Column("content_hash", String(64), nullable=False, comment="当前内容哈希"),
+            Column(
+                "trained_content_hash",
+                String(64),
+                comment="最近一次完成训练时的内容哈希",
+            ),
+            Column("vanna_training_id", String(128), comment="Vanna/Chroma中的训练记录ID"),
+            Column("created_at", DateTime, nullable=False, comment="创建时间"),
+            Column("updated_at", DateTime, nullable=False, comment="更新时间"),
+            Column("last_trained_at", DateTime, comment="最近一次训练时间"),
+            comment="ChatBI NL2SQL 业务文档训练数据表",
         )
+        # Store curated question-SQL examples for few-shot training.
         self.example_table = Table(
             "chatbi_vanna_example_sql",
             self.metadata,
-            Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("question", Text, nullable=False),
-            Column("sql_text", Text, nullable=False),
-            Column("content_hash", String(64), nullable=False),
-            Column("trained_content_hash", String(64)),
-            Column("vanna_training_id", String(128)),
-            Column("created_at", DateTime, nullable=False),
-            Column("updated_at", DateTime, nullable=False),
-            Column("last_trained_at", DateTime),
+            Column("id", Integer, primary_key=True, autoincrement=True, comment="主键ID"),
+            Column("question", Text, nullable=False, comment="示例问题"),
+            Column("sql_text", Text, nullable=False, comment="示例SQL"),
+            Column("content_hash", String(64), nullable=False, comment="问题和SQL组合后的哈希"),
+            Column(
+                "trained_content_hash",
+                String(64),
+                comment="最近一次完成训练时的内容哈希",
+            ),
+            Column("vanna_training_id", String(128), comment="Vanna/Chroma中的训练记录ID"),
+            Column("created_at", DateTime, nullable=False, comment="创建时间"),
+            Column("updated_at", DateTime, nullable=False, comment="更新时间"),
+            Column("last_trained_at", DateTime, comment="最近一次训练时间"),
+            comment="ChatBI NL2SQL 示例问答SQL训练数据表",
         )
+        # Persist DDL fingerprints so only changed tables are retrained.
         self.ddl_table = Table(
             "chatbi_vanna_ddl_fingerprint",
             self.metadata,
-            Column("table_name", String(255), primary_key=True),
-            Column("ddl_sql", Text, nullable=False),
-            Column("ddl_hash", String(64), nullable=False),
-            Column("vanna_training_id", String(128)),
-            Column("last_trained_at", DateTime),
-            Column("updated_at", DateTime, nullable=False),
+            Column("table_name", String(255), primary_key=True, comment="业务表名"),
+            Column("ddl_sql", Text, nullable=False, comment="当前DDL文本"),
+            Column("ddl_hash", String(64), nullable=False, comment="DDL哈希指纹"),
+            Column("vanna_training_id", String(128), comment="Vanna/Chroma中的训练记录ID"),
+            Column("last_trained_at", DateTime, comment="最近一次训练时间"),
+            Column("updated_at", DateTime, nullable=False, comment="最近一次检测到DDL的时间"),
+            comment="ChatBI NL2SQL 业务库DDL指纹表",
         )
+        # Keep a simple audit trail for manual training sync executions.
         self.sync_log_table = Table(
             "chatbi_vanna_sync_log",
             self.metadata,
-            Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("sync_type", String(64), nullable=False),
-            Column("result_json", JSON, nullable=False),
-            Column("created_at", DateTime, nullable=False),
+            Column("id", Integer, primary_key=True, autoincrement=True, comment="主键ID"),
+            Column("sync_type", String(64), nullable=False, comment="同步类型"),
+            Column("result_json", JSON, nullable=False, comment="同步结果JSON"),
+            Column("created_at", DateTime, nullable=False, comment="创建时间"),
+            comment="ChatBI NL2SQL 训练同步日志表",
         )
         self._ensure_metadata_database_exists()
         self.metadata_engine = self._create_engine(
@@ -252,6 +268,7 @@ class ChatBINL2SQLService:
     def _ensure_metadata_database_exists(self) -> None:
         import pymysql
 
+        # The metadata database stores training configs and sync state.
         conn = pymysql.connect(
             host=self.config.metadata_host,
             port=self.config.metadata_port,
@@ -283,6 +300,7 @@ class ChatBINL2SQLService:
             yield conn
 
     def _build_vanna(self) -> ChatBIVanna:
+        # Create a fresh Vanna instance per request so API calls stay stateless.
         vn = ChatBIVanna(
             config={
                 "api_key": self.config.qwen_api_key,
@@ -502,6 +520,7 @@ class ChatBINL2SQLService:
         with self._metadata_connection() as conn:
             rows = conn.execute(select(self.documentation_table)).mappings().all()
             for row in rows:
+                # Skip retraining when content hash has not changed since last sync.
                 if row["trained_content_hash"] == row["content_hash"] and row["vanna_training_id"]:
                     continue
 
@@ -527,6 +546,7 @@ class ChatBINL2SQLService:
         with self._metadata_connection() as conn:
             rows = conn.execute(select(self.example_table)).mappings().all()
             for row in rows:
+                # Skip retraining when question/sql content is unchanged.
                 if row["trained_content_hash"] == row["content_hash"] and row["vanna_training_id"]:
                     continue
 
@@ -573,6 +593,7 @@ class ChatBINL2SQLService:
 
             for table_name, (ddl_sql, ddl_hash) in current_ddls.items():
                 stored = stored_rows.get(table_name)
+                # Unchanged DDL does not need to be re-trained.
                 if stored and stored["ddl_hash"] == ddl_hash:
                     result.ddl_unchanged += 1
                     continue
@@ -609,6 +630,7 @@ class ChatBINL2SQLService:
 
             removed_table_names = set(stored_rows) - set(current_ddls)
             for table_name in removed_table_names:
+                # Clean up fingerprints for dropped business tables.
                 stored = stored_rows[table_name]
                 if stored["vanna_training_id"]:
                     vn.remove_training_data(stored["vanna_training_id"])
@@ -630,6 +652,7 @@ class ChatBINL2SQLService:
         return result
 
     def generate_sql(self, payload: GenerateSqlRequest) -> GenerateSqlResponse:
+        # Optional sync is useful when the caller wants "train then ask" in one request.
         if payload.auto_sync_training:
             self.sync_training(SyncTrainRequest())
 
