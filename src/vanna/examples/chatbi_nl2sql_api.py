@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Generator
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import (
     JSON,
@@ -75,66 +76,119 @@ def _required_env(name: str) -> str:
 
 
 class GenerateSqlRequest(BaseModel):
-    question: str = Field(..., description="Natural-language question to convert to SQL.")
+    question: str = Field(..., description="需要转换为 SQL 的自然语言问题。")
     auto_sync_training: bool = Field(
         default=False,
-        description="If true, synchronize changed training data and DDL fingerprints before generating SQL.",
+        description="是否在生成 SQL 前，先同步最新的训练数据和 DDL 指纹。",
     )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "question": "查询最近30天订单总金额排名前10的客户",
+                "auto_sync_training": False,
+            }
+        }
+    }
 
 
 class GenerateSqlResponse(BaseModel):
-    question: str
-    sql: str
+    question: str = Field(description="输入的自然语言问题。")
+    sql: str = Field(description="模型生成的 SQL 语句。")
 
 
 class DocumentationCreateRequest(BaseModel):
-    content: str
+    content: str = Field(description="用于训练的业务文档内容。")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "content": "订单表 order_info 中 status=1 表示已支付，amount 字段单位为元。"
+            }
+        }
+    }
 
 
 class DocumentationUpdateRequest(BaseModel):
-    content: str
+    content: str = Field(description="更新后的业务文档内容。")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "content": "订单表 order_info 中 status=1 表示已支付，refund_status=2 表示已退款。"
+            }
+        }
+    }
 
 
 class ExampleCreateRequest(BaseModel):
-    question: str
-    sql: str
+    question: str = Field(description="示例中的自然语言问题。")
+    sql: str = Field(description="与问题对应的标准 SQL。")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "question": "查询今天新增用户数",
+                "sql": "SELECT COUNT(*) AS user_count FROM user_info WHERE DATE(create_time) = CURDATE();",
+            }
+        }
+    }
 
 
 class ExampleUpdateRequest(BaseModel):
-    question: str
-    sql: str
+    question: str = Field(description="更新后的自然语言问题。")
+    sql: str = Field(description="更新后的标准 SQL。")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "question": "查询昨天新增用户数",
+                "sql": "SELECT COUNT(*) AS user_count FROM user_info WHERE DATE(create_time) = CURDATE() - INTERVAL 1 DAY;",
+            }
+        }
+    }
 
 
 class SyncTrainRequest(BaseModel):
-    sync_ddl: bool = True
-    sync_docs: bool = True
-    sync_examples: bool = True
+    sync_ddl: bool = Field(default=True, description="是否同步业务表 DDL 训练数据。")
+    sync_docs: bool = Field(default=True, description="是否同步业务文档训练数据。")
+    sync_examples: bool = Field(default=True, description="是否同步问答 SQL 示例训练数据。")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "sync_ddl": True,
+                "sync_docs": True,
+                "sync_examples": True,
+            }
+        }
+    }
 
 
 class TrainingDataResponse(BaseModel):
-    id: int
-    content: str | None = None
-    question: str | None = None
-    sql: str | None = None
-    content_hash: str
-    trained_content_hash: str | None = None
-    vanna_training_id: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    last_trained_at: datetime | None = None
+    id: int = Field(description="记录主键 ID。")
+    content: str | None = Field(default=None, description="业务文档内容。")
+    question: str | None = Field(default=None, description="训练示例中的问题。")
+    sql: str | None = Field(default=None, description="训练示例中的 SQL。")
+    content_hash: str = Field(description="当前内容的哈希值。")
+    trained_content_hash: str | None = Field(default=None, description="最近一次完成训练时的内容哈希值。")
+    vanna_training_id: str | None = Field(default=None, description="Vanna 中对应的训练记录 ID。")
+    created_at: datetime | None = Field(default=None, description="创建时间。")
+    updated_at: datetime | None = Field(default=None, description="更新时间。")
+    last_trained_at: datetime | None = Field(default=None, description="最近一次训练时间。")
 
 
 class SyncResult(BaseModel):
-    docs_added: int = 0
-    docs_updated: int = 0
-    docs_deleted: int = 0
-    examples_added: int = 0
-    examples_updated: int = 0
-    examples_deleted: int = 0
-    ddl_added: int = 0
-    ddl_updated: int = 0
-    ddl_deleted: int = 0
-    ddl_unchanged: int = 0
+    docs_added: int = Field(default=0, description="新增同步的业务文档数量。")
+    docs_updated: int = Field(default=0, description="更新同步的业务文档数量。")
+    docs_deleted: int = Field(default=0, description="删除的业务文档数量。")
+    examples_added: int = Field(default=0, description="新增同步的示例数量。")
+    examples_updated: int = Field(default=0, description="更新同步的示例数量。")
+    examples_deleted: int = Field(default=0, description="删除的示例数量。")
+    ddl_added: int = Field(default=0, description="新增同步的 DDL 数量。")
+    ddl_updated: int = Field(default=0, description="更新同步的 DDL 数量。")
+    ddl_deleted: int = Field(default=0, description="删除的 DDL 数量。")
+    ddl_unchanged: int = Field(default=0, description="未发生变化的 DDL 数量。")
 
 
 @dataclass
@@ -669,29 +723,61 @@ class ChatBINL2SQLService:
 
 
 service = ChatBINL2SQLService(ServiceConfig.from_env())
+tags_metadata = [
+    {"name": "系统", "description": "服务健康检查和文档导航接口。"},
+    {"name": "SQL生成", "description": "将自然语言问题转换为 SQL。"},
+    {"name": "训练文档", "description": "管理用于训练的业务文档。"},
+    {"name": "训练示例", "description": "管理用于训练的问答 SQL 示例。"},
+    {"name": "训练同步", "description": "将文档、示例和 DDL 同步到 Vanna 向量训练数据中。"},
+]
+
 app = FastAPI(
-    title="ChatBI NL2SQL API",
+    title="ChatBI NL2SQL 接口文档",
     version="0.1.0",
-    description="External API for question-to-SQL and incremental Vanna training.",
+    description="用于自然语言转 SQL、训练文档管理、示例管理和增量训练同步的接口服务。",
+    docs_url="/swagger",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    openapi_tags=tags_metadata,
 )
 
 
-@app.get("/health")
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/swagger")
+
+
+@app.get("/health", tags=["系统"], summary="健康检查")
 def health() -> dict[str, str]:
     return {"status": "healthy", "service": "chatbi-nl2sql"}
 
 
-@app.post("/api/chatbi/v1/sql/generate", response_model=GenerateSqlResponse)
+@app.post(
+    "/api/chatbi/v1/sql/generate",
+    response_model=GenerateSqlResponse,
+    tags=["SQL生成"],
+    summary="根据自然语言问题生成 SQL",
+)
 def generate_sql(payload: GenerateSqlRequest) -> GenerateSqlResponse:
     return service.generate_sql(payload)
 
 
-@app.get("/api/chatbi/v1/training/documentation", response_model=list[TrainingDataResponse])
+@app.get(
+    "/api/chatbi/v1/training/documentation",
+    response_model=list[TrainingDataResponse],
+    tags=["训练文档"],
+    summary="查询训练文档列表",
+)
 def list_documentation() -> list[TrainingDataResponse]:
     return service.list_documentation()
 
 
-@app.post("/api/chatbi/v1/training/documentation", response_model=TrainingDataResponse)
+@app.post(
+    "/api/chatbi/v1/training/documentation",
+    response_model=TrainingDataResponse,
+    tags=["训练文档"],
+    summary="新增训练文档",
+)
 def create_documentation(payload: DocumentationCreateRequest) -> TrainingDataResponse:
     return service.create_documentation(payload)
 
@@ -699,41 +785,75 @@ def create_documentation(payload: DocumentationCreateRequest) -> TrainingDataRes
 @app.put(
     "/api/chatbi/v1/training/documentation/{doc_id}",
     response_model=TrainingDataResponse,
+    tags=["训练文档"],
+    summary="更新训练文档",
 )
 def update_documentation(doc_id: int, payload: DocumentationUpdateRequest) -> TrainingDataResponse:
     return service.update_documentation(doc_id, payload)
 
 
-@app.delete("/api/chatbi/v1/training/documentation/{doc_id}")
+@app.delete(
+    "/api/chatbi/v1/training/documentation/{doc_id}",
+    tags=["训练文档"],
+    summary="删除训练文档",
+)
 def delete_documentation(doc_id: int) -> dict[str, Any]:
     return service.delete_documentation(doc_id)
 
 
-@app.get("/api/chatbi/v1/training/examples", response_model=list[TrainingDataResponse])
+@app.get(
+    "/api/chatbi/v1/training/examples",
+    response_model=list[TrainingDataResponse],
+    tags=["训练示例"],
+    summary="查询训练示例列表",
+)
 def list_examples() -> list[TrainingDataResponse]:
     return service.list_examples()
 
 
-@app.post("/api/chatbi/v1/training/examples", response_model=TrainingDataResponse)
+@app.post(
+    "/api/chatbi/v1/training/examples",
+    response_model=TrainingDataResponse,
+    tags=["训练示例"],
+    summary="新增训练示例",
+)
 def create_example(payload: ExampleCreateRequest) -> TrainingDataResponse:
     return service.create_example(payload)
 
 
-@app.put("/api/chatbi/v1/training/examples/{example_id}", response_model=TrainingDataResponse)
+@app.put(
+    "/api/chatbi/v1/training/examples/{example_id}",
+    response_model=TrainingDataResponse,
+    tags=["训练示例"],
+    summary="更新训练示例",
+)
 def update_example(example_id: int, payload: ExampleUpdateRequest) -> TrainingDataResponse:
     return service.update_example(example_id, payload)
 
 
-@app.delete("/api/chatbi/v1/training/examples/{example_id}")
+@app.delete(
+    "/api/chatbi/v1/training/examples/{example_id}",
+    tags=["训练示例"],
+    summary="删除训练示例",
+)
 def delete_example(example_id: int) -> dict[str, Any]:
     return service.delete_example(example_id)
 
 
-@app.post("/api/chatbi/v1/train/sync", response_model=SyncResult)
+@app.post(
+    "/api/chatbi/v1/train/sync",
+    response_model=SyncResult,
+    tags=["训练同步"],
+    summary="执行训练数据同步",
+)
 def sync_training(payload: SyncTrainRequest) -> SyncResult:
     return service.sync_training(payload)
 
 
-@app.get("/api/chatbi/v1/train/ddl-fingerprints")
+@app.get(
+    "/api/chatbi/v1/train/ddl-fingerprints",
+    tags=["训练同步"],
+    summary="查询 DDL 指纹列表",
+)
 def list_ddl_fingerprints() -> list[dict[str, Any]]:
     return service.list_ddl_fingerprints()
