@@ -8,9 +8,13 @@ from ..base import VannaBase
 class QianWenAI_Chat(VannaBase):
     def __init__(self, client=None, config=None):
         VannaBase.__init__(self, config=config)
+        if config is None:
+            config = {}
 
         # default parameters - can be overrided using config
         self.temperature = 0.7
+        self.request_timeout = float(config.get("request_timeout", 60.0))
+        self.max_retries = int(config.get("max_retries", 1))
 
         if "temperature" in config:
             self.temperature = config["temperature"]
@@ -35,7 +39,11 @@ class QianWenAI_Chat(VannaBase):
             return
 
         if config is None and client is None:
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.client = OpenAI(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                timeout=self.request_timeout,
+                max_retries=self.max_retries,
+            )
             return
 
         if "api_key" in config:
@@ -43,10 +51,15 @@ class QianWenAI_Chat(VannaBase):
                 self.client = OpenAI(
                     api_key=config["api_key"],
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    timeout=self.request_timeout,
+                    max_retries=self.max_retries,
                 )
             else:
                 self.client = OpenAI(
-                    api_key=config["api_key"], base_url=config["base_url"]
+                    api_key=config["api_key"],
+                    base_url=config["base_url"],
+                    timeout=self.request_timeout,
+                    max_retries=self.max_retries,
                 )
 
     def system_message(self, message: str) -> any:
@@ -74,6 +87,7 @@ class QianWenAI_Chat(VannaBase):
         if kwargs.get("model", None) is not None:
             model = kwargs.get("model", None)
             print(f"Using model {model} for {num_tokens} tokens (approx)")
+            print(f"Submitting Qwen request with timeout={self.request_timeout}s")
             response = self.client.chat.completions.create(
                 model=model,
                 messages=prompt,
@@ -83,6 +97,7 @@ class QianWenAI_Chat(VannaBase):
         elif kwargs.get("engine", None) is not None:
             engine = kwargs.get("engine", None)
             print(f"Using model {engine} for {num_tokens} tokens (approx)")
+            print(f"Submitting Qwen request with timeout={self.request_timeout}s")
             response = self.client.chat.completions.create(
                 engine=engine,
                 messages=prompt,
@@ -93,6 +108,7 @@ class QianWenAI_Chat(VannaBase):
             print(
                 f"Using engine {self.config['engine']} for {num_tokens} tokens (approx)"
             )
+            print(f"Submitting Qwen request with timeout={self.request_timeout}s")
             response = self.client.chat.completions.create(
                 engine=self.config["engine"],
                 messages=prompt,
@@ -103,6 +119,7 @@ class QianWenAI_Chat(VannaBase):
             print(
                 f"Using model {self.config['model']} for {num_tokens} tokens (approx)"
             )
+            print(f"Submitting Qwen request with timeout={self.request_timeout}s")
             response = self.client.chat.completions.create(
                 model=self.config["model"],
                 messages=prompt,
@@ -116,12 +133,14 @@ class QianWenAI_Chat(VannaBase):
                 model = "qwen-plus"
 
             print(f"Using model {model} for {num_tokens} tokens (approx)")
+            print(f"Submitting Qwen request with timeout={self.request_timeout}s")
             response = self.client.chat.completions.create(
                 model=model,
                 messages=prompt,
                 stop=None,
                 temperature=self.temperature,
             )
+        print("Received Qwen response successfully")
 
         # Find the first response from the chatbot that has text in it (some responses may not have text)
         for choice in response.choices:

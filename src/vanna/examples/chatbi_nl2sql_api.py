@@ -196,6 +196,7 @@ class ServiceConfig:
     qwen_api_key: str
     qwen_model: str
     qwen_base_url: str
+    qwen_request_timeout: float
     chroma_path: str
     response_language: str
     business_host: str
@@ -224,6 +225,7 @@ class ServiceConfig:
             qwen_base_url=os.getenv(
                 "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
             ),
+            qwen_request_timeout=float(os.getenv("QWEN_HTTP_TIMEOUT_SECONDS", "60")),
             chroma_path=os.getenv(
                 "VANNA_CHROMA_PATH", str(Path(".chroma") / "chatbi_nl2sql")
             ),
@@ -360,6 +362,7 @@ class ChatBINL2SQLService:
                 "api_key": self.config.qwen_api_key,
                 "model": self.config.qwen_model,
                 "base_url": self.config.qwen_base_url,
+                "request_timeout": self.config.qwen_request_timeout,
                 "path": self.config.chroma_path,
                 "dialect": "MySQL",
                 "language": self.config.response_language,
@@ -711,7 +714,9 @@ class ChatBINL2SQLService:
             self.sync_training(SyncTrainRequest())
 
         vn = self._build_vanna()
+        print(f"Generating SQL for question: {payload.question}")
         sql = vn.generate_sql(payload.question)
+        print("Generated SQL successfully")
         return GenerateSqlResponse(question=payload.question, sql=sql)
 
     def list_ddl_fingerprints(self) -> list[dict[str, Any]]:
