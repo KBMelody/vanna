@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 
@@ -38,22 +37,6 @@ def _get_qwen_api_key() -> str:
     return os.getenv("QWEN_API_KEY") or _get_required_env("OPENAI_API_KEY")
 
 
-def _load_json_list(env_name: str) -> list:
-    raw = os.getenv(env_name, "").strip()
-    if not raw:
-        return []
-
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"{env_name} must be valid JSON") from exc
-
-    if not isinstance(value, list):
-        raise RuntimeError(f"{env_name} must be a JSON array")
-
-    return value
-
-
 def _build_vanna() -> QwenMySQLVanna:
     config = {
         "api_key": _get_qwen_api_key(),
@@ -63,7 +46,7 @@ def _build_vanna() -> QwenMySQLVanna:
         ),
         "path": os.getenv(
             "VANNA_CHROMA_PATH",
-            str(Path(".chroma") / "qwen_mysql_nl2sql"),
+            str(Path(".chroma") / "chatbi_nl2sql"),
         ),
         "dialect": "MySQL",
         "language": os.getenv("VANNA_RESPONSE_LANGUAGE", "Chinese"),
@@ -106,25 +89,11 @@ def _iter_target_tables(vn: QwenMySQLVanna) -> list[str]:
 
 
 def train_mysql_metadata(vn: QwenMySQLVanna) -> None:
-    """Train schema, business docs, and example question-SQL pairs."""
+    """Train schema metadata only. Docs/examples are now managed via API + chatbi_sys."""
     for table_name in _iter_target_tables(vn):
         df_ddl = vn.run_sql(f"SHOW CREATE TABLE `{table_name}`")
         create_sql = df_ddl.iloc[0, 1]
         vn.train(ddl=create_sql)
-
-    for doc in _load_json_list("VANNA_TRAIN_DOCUMENTATION_JSON"):
-        vn.train(documentation=str(doc))
-
-    for item in _load_json_list("VANNA_TRAIN_EXAMPLES_JSON"):
-        if not isinstance(item, dict):
-            raise RuntimeError("VANNA_TRAIN_EXAMPLES_JSON items must be JSON objects")
-        question = item.get("question")
-        sql = item.get("sql")
-        if not question or not sql:
-            raise RuntimeError(
-                "Each VANNA_TRAIN_EXAMPLES_JSON item must contain question and sql"
-            )
-        vn.train(question=question, sql=sql)
 
 
 def generate_sql_with_training(question: str) -> str:
