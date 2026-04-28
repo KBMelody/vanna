@@ -1,0 +1,44 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_PROGRESS_BAR=off \
+    OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    PYTHONPATH=/workspace/src \
+    VANNA_CHROMA_PATH=/data/chroma
+
+WORKDIR /workspace
+
+RUN python -m pip install --no-cache-dir --upgrade "pip<25" setuptools wheel \
+    && python -m pip install --no-cache-dir --progress-bar off \
+        click>=8.0.0 \
+        pandas \
+        httpx>=0.28.0 \
+        PyYAML \
+        plotly \
+        tabulate \
+        sqlparse \
+        sqlalchemy \
+        requests \
+        fastapi>=0.68.0 \
+        uvicorn>=0.15.0 \
+        PyMySQL \
+        chromadb>=1.1.0 \
+        openai \
+        python-dotenv
+
+RUN useradd --create-home --shell /bin/bash appuser \
+    && mkdir -p /workspace \
+    && chown -R appuser:appuser /workspace
+
+USER appuser
+
+EXPOSE 8001
+
+CMD ["uvicorn", "vanna.examples.chatbi_nl2sql_api:app", "--host", "0.0.0.0", "--port", "8001"]

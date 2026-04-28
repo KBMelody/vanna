@@ -5,6 +5,9 @@ from openai import OpenAI
 from ..base import VannaBase
 
 
+OPENAI_COMPAT_PLACEHOLDER_API_KEY = "EMPTY"
+
+
 class QianWenAI_Chat(VannaBase):
     def __init__(self, client=None, config=None):
         VannaBase.__init__(self, config=config)
@@ -40,27 +43,26 @@ class QianWenAI_Chat(VannaBase):
 
         if config is None and client is None:
             self.client = OpenAI(
-                api_key=os.getenv("OPENAI_API_KEY"),
+                api_key=os.getenv("OPENAI_API_KEY")
+                or OPENAI_COMPAT_PLACEHOLDER_API_KEY,
                 timeout=self.request_timeout,
                 max_retries=self.max_retries,
             )
             return
 
-        if "api_key" in config:
-            if "base_url" not in config:
-                self.client = OpenAI(
-                    api_key=config["api_key"],
-                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                    timeout=self.request_timeout,
-                    max_retries=self.max_retries,
-                )
-            else:
-                self.client = OpenAI(
-                    api_key=config["api_key"],
-                    base_url=config["base_url"],
-                    timeout=self.request_timeout,
-                    max_retries=self.max_retries,
-                )
+        api_key = config.get("api_key") or os.getenv("OPENAI_API_KEY")
+        base_url = config.get(
+            "base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
+
+        # The OpenAI Python client requires an api_key even for local
+        # OpenAI-compatible endpoints that do not authenticate requests.
+        self.client = OpenAI(
+            api_key=api_key or OPENAI_COMPAT_PLACEHOLDER_API_KEY,
+            base_url=base_url,
+            timeout=self.request_timeout,
+            max_retries=self.max_retries,
+        )
 
     def system_message(self, message: str) -> any:
         return {"role": "system", "content": message}

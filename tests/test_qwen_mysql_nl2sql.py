@@ -33,13 +33,12 @@ def _get_required_env(name: str) -> str:
     return value
 
 
-def _get_qwen_api_key() -> str:
-    return os.getenv("QWEN_API_KEY") or _get_required_env("OPENAI_API_KEY")
+def _get_qwen_api_key() -> str | None:
+    return os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 
 def _build_vanna() -> QwenMySQLVanna:
     config = {
-        "api_key": _get_qwen_api_key(),
         "model": os.getenv("QWEN_MODEL", "qwen3.6-plus"),
         "base_url": os.getenv(
             "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -51,6 +50,8 @@ def _build_vanna() -> QwenMySQLVanna:
         "dialect": "MySQL",
         "language": os.getenv("VANNA_RESPONSE_LANGUAGE", "Chinese"),
     }
+    if _get_qwen_api_key():
+        config["api_key"] = _get_qwen_api_key()
     return QwenMySQLVanna(config=config)
 
 
@@ -115,8 +116,6 @@ def test_generate_sql_with_qwen_mysql_chroma():
         "VANNA_TEST_QUESTION",
     ]
     missing = [name for name in required_env if not os.getenv(name)]
-    if not (os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY")):
-        missing.append("QWEN_API_KEY/OPENAI_API_KEY")
     if missing:
         pytest.skip(f"Missing environment variables: {', '.join(missing)}")
 

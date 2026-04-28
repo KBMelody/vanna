@@ -528,7 +528,7 @@ class SyncResult(BaseModel):
 
 @dataclass
 class ServiceConfig:
-    qwen_api_key: str
+    qwen_api_key: str | None
     qwen_model: str
     qwen_base_url: str
     qwen_request_timeout: float
@@ -550,7 +550,9 @@ class ServiceConfig:
 
     @classmethod
     def from_env(cls) -> "ServiceConfig":
-        qwen_api_key = os.getenv("QWEN_API_KEY") or _required_env("OPENAI_API_KEY")
+        qwen_api_key = _clean_optional_str(
+            os.getenv("QWEN_API_KEY") or os.getenv("OPENAI_API_KEY")
+        )
 
         metadata_host = os.getenv("CHATBI_SYS_HOST") or os.getenv("MYSQL_HOST")
         metadata_user = os.getenv("CHATBI_SYS_USER") or os.getenv("MYSQL_USER")
@@ -1141,18 +1143,19 @@ class ChatBINL2SQLService:
         每个数据库都会绑定独立的 Chroma 集合，避免 DDL、文档、示例 SQL
         被其它数据库误检索到。
         """
-        vn = ChatBIVanna(
-            config={
-                "api_key": self.config.qwen_api_key,
-                "model": self.config.qwen_model,
-                "base_url": self.config.qwen_base_url,
-                "request_timeout": self.config.qwen_request_timeout,
-                "path": self.config.chroma_path,
-                "dialect": "MySQL",
-                "language": self.config.response_language,
-                "collection_suffix": _collection_suffix(database_row["database_key"]),
-            }
-        )
+        vanna_config = {
+            "model": self.config.qwen_model,
+            "base_url": self.config.qwen_base_url,
+            "request_timeout": self.config.qwen_request_timeout,
+            "path": self.config.chroma_path,
+            "dialect": "MySQL",
+            "language": self.config.response_language,
+            "collection_suffix": _collection_suffix(database_row["database_key"]),
+        }
+        if self.config.qwen_api_key:
+            vanna_config["api_key"] = self.config.qwen_api_key
+
+        vn = ChatBIVanna(config=vanna_config)
         vn.connect_to_mysql(
             host=database_row["host"],
             port=int(database_row["port"]),
