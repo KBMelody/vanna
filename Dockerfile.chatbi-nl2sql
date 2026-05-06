@@ -5,37 +5,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_PROGRESS_BAR=off \
+    PIP_CONFIG_FILE=/dev/null \
+    OTEL_SDK_DISABLED=true \
+    ANONYMIZED_TELEMETRY=False \
     OPENBLAS_NUM_THREADS=1 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     NUMEXPR_NUM_THREADS=1 \
     VECLIB_MAXIMUM_THREADS=1 \
+    XDG_CACHE_HOME=/opt/.cache \
     PYTHONPATH=/workspace/src \
     VANNA_CHROMA_PATH=/data/chroma
 
 WORKDIR /workspace
 
-RUN python -m pip install --no-cache-dir --upgrade "pip<25" setuptools wheel \
-    && python -m pip install --no-cache-dir --progress-bar off \
-        click>=8.0.0 \
-        pandas \
-        httpx>=0.28.0 \
-        PyYAML \
-        plotly \
-        tabulate \
-        sqlparse \
-        sqlalchemy \
-        requests \
-        fastapi>=0.68.0 \
-        uvicorn>=0.15.0 \
-        PyMySQL \
-        chromadb>=1.1.0 \
-        openai \
-        python-dotenv
+COPY requirements/chatbi-nl2sql-offline.txt /tmp/chatbi-nl2sql-offline.txt
+COPY wheels/ /wheels/
+
+RUN python -m pip --isolated install --no-index --find-links=/wheels -r /tmp/chatbi-nl2sql-offline.txt \
+    && rm -rf /wheels /tmp/chatbi-nl2sql-offline.txt
+
+COPY src/ /workspace/src/
 
 RUN useradd --create-home --shell /bin/bash appuser \
-    && mkdir -p /workspace \
-    && chown -R appuser:appuser /workspace
+    && mkdir -p /workspace /data/chroma /opt/.cache \
+    && chown -R appuser:appuser /workspace /data/chroma /opt/.cache
 
 USER appuser
 

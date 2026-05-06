@@ -1,0 +1,11 @@
+name: Kimi Code Config
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Kimi Code
+    provider: anthropic
+    model: kimi-for-coding
+    apiKey: sk-kimi-PenSscHedKMzjcPWhoYJagFE4asR0qKUgZ7JvyI4Rjnv6sCanpeAF2RLjuRgcRbu
+    apiBase: https://api.kimi.com/coding/
+    contextLength: 128000

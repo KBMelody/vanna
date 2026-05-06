@@ -19,6 +19,8 @@ chroma.sqlite3
 .coverage.*
 milvus.db
 .milvus.db.lock
+*.whl
+*.rar
 
 # Frontend builds and dependencies
 frontends/**/node_modules/

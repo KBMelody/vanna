@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -521,6 +522,50 @@ class SyncResult(BaseModel):
                 "ddl_updated": 2,
                 "ddl_deleted": 1,
                 "ddl_unchanged": 28,
+            }
+        }
+    }
+
+
+class ChromaDocumentationItem(BaseModel):
+    id: str = Field(description="Chroma 中的文档 ID")
+    content: str = Field(description="文档内容")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "abc123-doc",
+                "content": "订单表 order_info 中 status=1 表示已支付。",
+            }
+        }
+    }
+
+
+class ChromaExampleItem(BaseModel):
+    id: str = Field(description="Chroma 中的示例 ID")
+    question: str = Field(description="自然语言问题")
+    sql: str = Field(description="对应的标准 SQL")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "def456-sql",
+                "question": "查询今天新增用户数",
+                "sql": "SELECT COUNT(*) FROM user_info WHERE DATE(create_time) = CURDATE();",
+            }
+        }
+    }
+
+
+class ChromaDdlItem(BaseModel):
+    id: str = Field(description="Chroma 中的 DDL ID")
+    content: str = Field(description="DDL 语句")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "id": "ghi789-ddl",
+                "content": "CREATE TABLE `order_info` (...)",
             }
         }
     }
@@ -1701,6 +1746,46 @@ class ChatBINL2SQLService:
             rows = conn.execute(stmt).mappings().all()
         return [dict(row) for row in rows]
 
+    def list_chroma_documentation(self, database_id: int) -> list[ChromaDocumentationItem]:
+        database_row = self._get_database_row(database_id)
+        vn = self._build_vanna(database_row)
+        data = vn.documentation_collection.get()
+        if not data or not data.get("ids"):
+            return []
+        return [
+            ChromaDocumentationItem(id=doc_id, content=doc)
+            for doc_id, doc in zip(data["ids"], data["documents"])
+        ]
+
+    def list_chroma_examples(self, database_id: int) -> list[ChromaExampleItem]:
+        database_row = self._get_database_row(database_id)
+        vn = self._build_vanna(database_row)
+        data = vn.sql_collection.get()
+        if not data or not data.get("ids"):
+            return []
+        result: list[ChromaExampleItem] = []
+        for doc_id, doc in zip(data["ids"], data["documents"]):
+            parsed = json.loads(doc)
+            result.append(
+                ChromaExampleItem(
+                    id=doc_id,
+                    question=parsed["question"],
+                    sql=parsed["sql"],
+                )
+            )
+        return result
+
+    def list_chroma_ddl(self, database_id: int) -> list[ChromaDdlItem]:
+        database_row = self._get_database_row(database_id)
+        vn = self._build_vanna(database_row)
+        data = vn.ddl_collection.get()
+        if not data or not data.get("ids"):
+            return []
+        return [
+            ChromaDdlItem(id=doc_id, content=doc)
+            for doc_id, doc in zip(data["ids"], data["documents"])
+        ]
+
 
 service = ChatBINL2SQLService(ServiceConfig.from_env())
 tags_metadata = [
@@ -1929,3 +2014,39 @@ def list_ddl_fingerprints(
     database_id: int | None = Query(default=None),
 ) -> list[dict[str, Any]]:
     return service.list_ddl_fingerprints(database_id)
+
+
+@app.get(
+    "/api/chatbi/v1/train/chroma/documentation",
+    response_model=list[ChromaDocumentationItem],
+    tags=["训练同步"],
+    summary="查询 Chroma 中已存储的文档",
+)
+def list_chroma_documentation(
+    database_id: int = Query(description="目标数据库 ID"),
+) -> list[ChromaDocumentationItem]:
+    return service.list_chroma_documentation(database_id)
+
+
+@app.get(
+    "/api/chatbi/v1/train/chroma/examples",
+    response_model=list[ChromaExampleItem],
+    tags=["训练同步"],
+    summary="查询 Chroma 中已存储的示例 SQL",
+)
+def list_chroma_examples(
+    database_id: int = Query(description="目标数据库 ID"),
+) -> list[ChromaExampleItem]:
+    return service.list_chroma_examples(database_id)
+
+
+@app.get(
+    "/api/chatbi/v1/train/chroma/ddl",
+    response_model=list[ChromaDdlItem],
+    tags=["训练同步"],
+    summary="查询 Chroma 中已存储的 DDL",
+)
+def list_chroma_ddl(
+    database_id: int = Query(description="目标数据库 ID"),
+) -> list[ChromaDdlItem]:
+    return service.list_chroma_ddl(database_id)

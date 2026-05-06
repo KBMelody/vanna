@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile src/vanna/examples/chatbi_nl2sql_api.py)"
+    ]
+  }
+}
