@@ -21,8 +21,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Generator
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import HTTPException, Query
 from fastapi.responses import RedirectResponse
+from fastapi_offline import FastAPIOffline as FastAPI
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import (
     JSON,

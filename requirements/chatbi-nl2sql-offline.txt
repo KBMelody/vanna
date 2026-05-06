@@ -9,6 +9,7 @@ sqlparse
 sqlalchemy
 requests
 fastapi>=0.68.0
+fastapi-offline>=1.7.0
 uvicorn>=0.15.0
 uvloop>=0.15.1; sys_platform != "win32" and sys_platform != "cygwin" and platform_python_implementation != "PyPy"
 PyMySQL
