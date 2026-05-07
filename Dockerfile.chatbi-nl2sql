@@ -28,10 +28,10 @@ RUN python -m pip --isolated install --no-index --find-links=/wheels -r /tmp/cha
 COPY src/ /workspace/src/
 
 RUN useradd --create-home --shell /bin/bash appuser \
-    && mkdir -p /workspace /data/chroma /opt/.cache \
-    && chown -R appuser:appuser /workspace /data/chroma /opt/.cache
+    && mkdir -p /workspace /data/chroma /root/.cache \
+    && chown -R appuser:appuser /workspace /data/chroma /root/.cache
 
-USER appuser
+USER root
 
 EXPOSE 8001
 
